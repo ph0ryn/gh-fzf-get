@@ -1,35 +1,106 @@
 #!/usr/bin/env bash
 set -e
 
-echo "Hello gh-fzf-get!"
+owner=
+login=
+query=
+full_name=
+target=
+ghq_args=()
 
-# Snippets to help get started:
+for cmd in ghq fzf; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    printf 'gh fzf-get: %s is required\n' "$cmd" >&2
+    exit 1
+  fi
+done
 
-# Determine if an executable is in the PATH
-# if ! type -p ruby >/dev/null; then
-#   echo "Ruby not found on the system" >&2
-#   exit 1
-# fi
+owner="${1:-}"
+if [[ -z "$owner" || "$owner" == -* ]]; then
+  login="$(gh api user --jq .login 2>/dev/null)" || {
+    printf 'gh fzf-get: failed to get authenticated GitHub user\n' >&2
+    exit 1
+  }
+  owner="$login"
+  ghq_args=("$@")
+else
+  shift
+  ghq_args=("$@")
+fi
 
-# Pass arguments through to another command
-# gh issue list "$@" -R cli/cli
+query='
+  query($owner: String!) {
+    repositoryOwner(login: $owner) {
+      repositories(
+        first: 100
+        orderBy: { field: UPDATED_AT, direction: DESC }
+      ) {
+        nodes {
+          nameWithOwner
+          isPrivate
+          updatedAt
+        }
+      }
+    }
+  }
+'
 
-# Using the gh api command to retrieve and format information
-# QUERY='
-#   query($endCursor: String) {
-#     viewer {
-#       repositories(first: 100, after: $endCursor) {
-#         nodes {
-#           nameWithOwner
-#           stargazerCount
-#         }
-#       }
-#     }
-#   }
-# '
-# TEMPLATE='
-#   {{- range $repo := .data.viewer.repositories.nodes -}}
-#     {{- printf "name: %s - stargazers: %v\n" $repo.nameWithOwner $repo.stargazerCount -}}
-#   {{- end -}}
-# '
-# exec gh api graphql -f query="${QUERY}" --paginate --template="${TEMPLATE}"
+full_name=$(
+  gh api graphql \
+    -f owner="$owner" \
+    -f query="$query" \
+    --jq '
+      .data.repositoryOwner.repositories.nodes[]?
+      | [
+          .nameWithOwner,
+          (if .isPrivate then "private" else "public" end),
+          .updatedAt
+        ]
+      | @tsv
+    ' |
+    awk -F '\t' '
+      {
+        name[NR] = $1
+        vis[NR] = $2
+        updated[NR] = $3
+
+        if (length($1) > max) {
+          max = length($1)
+        }
+      }
+
+      END {
+        for (i = 1; i <= NR; i++) {
+          if (vis[i] == "private") {
+            label = "\033[1;35mprivate\033[0m"
+          } else {
+            label = "\033[2;37mpublic \033[0m"
+          }
+
+          printf "%s\t%-*s  %s\n", name[i], max, name[i], label
+        }
+      }
+    ' |
+    fzf \
+      --ansi \
+      --prompt="repo (${owner})> " \
+      --height=40% \
+      --layout=reverse \
+      --border \
+      --delimiter=$'\t' \
+      --with-nth=2 |
+    cut -f1
+) || {
+  exit 0
+}
+
+[[ -z "$full_name" ]] && {
+  exit 0
+}
+
+ghq get "${ghq_args[@]}" "git@github.com:${full_name}.git"
+
+target="$(ghq list -p -e "github.com/${full_name}" | head -n 1)"
+[[ -z "$target" ]] && exit 1
+
+printf '%s\n' "$target"
