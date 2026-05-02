@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 owner=
 login=
+owner_login=
 query=
+owner_query=
+repo_rows=
 full_name=
 target=
 ghq_args=()
@@ -28,13 +31,26 @@ else
   ghq_args=("$@")
 fi
 
-query='
+owner_query='
   query($owner: String!) {
+    repositoryOwner(login: $owner) {
+      login
+    }
+  }
+'
+
+query='
+  query($owner: String!, $endCursor: String) {
     repositoryOwner(login: $owner) {
       repositories(
         first: 100
+        after: $endCursor
         orderBy: { field: UPDATED_AT, direction: DESC }
       ) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
         nodes {
           nameWithOwner
           isPrivate
@@ -45,8 +61,23 @@ query='
   }
 '
 
-full_name=$(
+owner_login="$(
   gh api graphql \
+    -f owner="$owner" \
+    -f query="$owner_query" \
+    --jq '.data.repositoryOwner.login // ""'
+)" || {
+  printf 'gh fzf-get: failed to get owner: %s\n' "$owner" >&2
+  exit 1
+}
+
+if [[ -z "$owner_login" ]]; then
+  printf 'gh fzf-get: owner not found: %s\n' "$owner" >&2
+  exit 1
+fi
+
+repo_rows="$(
+  gh api graphql --paginate \
     -f owner="$owner" \
     -f query="$query" \
     --jq '
@@ -57,7 +88,19 @@ full_name=$(
           .updatedAt
         ]
       | @tsv
-    ' |
+    '
+)" || {
+  printf 'gh fzf-get: failed to get repositories for %s\n' "$owner" >&2
+  exit 1
+}
+
+if [[ -z "$repo_rows" ]]; then
+  printf 'gh fzf-get: no repositories found for %s\n' "$owner" >&2
+  exit 1
+fi
+
+full_name=$(
+  printf '%s\n' "$repo_rows" |
     awk -F '\t' '
       {
         name[NR] = $1
