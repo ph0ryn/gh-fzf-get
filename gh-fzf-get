@@ -9,6 +9,7 @@ owner_query=
 repo_rows=
 full_name=
 target=
+repo_limit=100
 ghq_args=()
 
 for cmd in ghq fzf; do
@@ -25,11 +26,21 @@ if [[ -z "$owner" || "$owner" == -* ]]; then
     exit 1
   }
   owner="$login"
-  ghq_args=("$@")
 else
   shift
-  ghq_args=("$@")
 fi
+
+if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+  repo_limit="$1"
+  shift
+fi
+
+if ((repo_limit < 1 || repo_limit > 1000)); then
+  printf 'gh fzf-get: repository limit must be between 1 and 1000\n' >&2
+  exit 1
+fi
+
+ghq_args=("$@")
 
 owner_query='
   query($owner: String!) {
@@ -40,17 +51,12 @@ owner_query='
 '
 
 query='
-  query($owner: String!, $endCursor: String) {
+  query($owner: String!, $repoLimit: Int!) {
     repositoryOwner(login: $owner) {
       repositories(
-        first: 100
-        after: $endCursor
+        first: $repoLimit
         orderBy: { field: UPDATED_AT, direction: DESC }
       ) {
-        pageInfo {
-          hasNextPage
-          endCursor
-        }
         nodes {
           nameWithOwner
           isPrivate
@@ -77,8 +83,9 @@ if [[ -z "$owner_login" ]]; then
 fi
 
 repo_rows="$(
-  gh api graphql --paginate \
+  gh api graphql \
     -f owner="$owner" \
+    -F repoLimit="$repo_limit" \
     -f query="$query" \
     --jq '
       .data.repositoryOwner.repositories.nodes[]?
