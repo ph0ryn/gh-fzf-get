@@ -109,13 +109,15 @@ full_name=$(
 
       END {
         for (i = 1; i <= NR; i++) {
+          updated_date = substr(updated[i], 1, 10)
+
           if (vis[i] == "private") {
             label = "\033[1;35mprivate\033[0m"
           } else {
             label = "\033[2;37mpublic \033[0m"
           }
 
-          printf "%s\t%-*s  %s\n", name[i], max, name[i], label
+          printf "%s\t%-*s  \033[2;37m%s\033[0m  %s\n", name[i], max, name[i], updated_date, label
         }
       }
     ' |
