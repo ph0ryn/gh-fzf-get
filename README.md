@@ -2,6 +2,8 @@
 
 Pick a GitHub repository with fzf and clone it with ghq.
 
+<img width="498" height="295" alt="image" src="https://github.com/user-attachments/assets/b9fd0222-0b69-436f-8dde-0f1d8866ce34" />
+
 ## Installation
 
 ```sh
