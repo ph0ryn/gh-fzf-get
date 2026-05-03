@@ -6,8 +6,46 @@ Pick a GitHub repository with fzf and clone it with ghq.
 
 ## Installation
 
+### Using gh
+
 ```sh
 gh extension install ph0ryn/gh-fzf-get
+```
+
+### Using nix
+
+Add the overlay setting in `flake.nix`
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    gh-fzf-get = {
+      url = "github:ph0ryn/gh-fzf-get";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { gh-fzf-get, ... }: {
+    nixpkgs.overlays = [
+      gh-fzf-get.overlays.default
+    ];
+  };
+}
+```
+
+Then add extension in `gh` config
+
+```nix
+{ pkgs, ... }:
+{
+  programs.gh = {
+    enable = true;
+    extensions = [
+      pkgs.gh-fzf-get
+    ];
+  };
+}
 ```
 
 ## Usage
